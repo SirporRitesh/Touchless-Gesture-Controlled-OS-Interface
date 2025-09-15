@@ -1,0 +1,56 @@
+# Project Plan: Gesture-Controlled Cursor & Actions
+
+## Goal
+Build a desktop application in Python that uses webcam-based hand tracking to control the system cursor and perform basic actions (click, scroll, volume control).  
+The application should run locally on laptops without requiring deployment or internet connection.
+
+## MVP Features
+1. **Real-time Hand Tracking**
+   - Use MediaPipe Hands to detect and track hand landmarks.
+   - Show live camera feed with drawn landmarks overlay.
+
+2. **Cursor Control**
+   - Map index finger tip coordinates to screen coordinates.
+   - Move the mouse cursor in sync with finger position.
+
+3. **Left Click Gesture**
+   - Define "pinch" gesture (thumb tip + index tip distance below threshold).
+   - Trigger system left click when pinch is detected.
+
+4. **One Advanced Function (choose one for MVP)**
+   - **Volume Control:** Thumb–index distance mapped to system volume level.  
+   - **Scrolling:** Thumb–pinky pinch gesture triggers vertical scrolling.
+
+## Technical Guidelines
+- Use Python as the primary language.
+- Core libraries:
+  - `mediapipe` + `opencv-python` → hand tracking & camera feed.
+  - `pyautogui` (or `pynput`) → cursor movement, click, scroll.
+  - `pycaw` → system audio control (Windows only, optional).
+- Use modular code structure:
+  - `hand_tracking.py` → MediaPipe utilities (detect landmarks).
+  - `gestures.py` → gesture recognition and threshold logic.
+  - `actions.py` → system control functions (cursor, click, scroll, volume).
+  - `main.py` → application entry point, integrates everything.
+- Write small, testable functions instead of one long script.
+
+## Coding Practices
+- Always write clear comments explaining gesture definitions and thresholds.
+- Avoid hardcoding values; keep thresholds as constants at the top of files.
+- Use `requirements.txt` for dependencies.
+- Follow consistent naming (snake_case for functions/variables).
+- Print debug statements in console when gestures are detected (for feedback).
+- Ensure code does not crash if the hand is not detected (handle None safely).
+
+## GitHub Workflow
+- Main branch: stable and working code.
+- Feature branches: one per feature (e.g., `feature/hand-tracking`, `feature/cursor-control`).
+- Merge tested code back into main at the end of each sprint session.
+- Each commit should reflect a clear step (e.g., "Added pinch detection for left click").
+
+## End of Sprint Deliverable
+- Running `python main.py` should open webcam feed.
+- Moving index finger moves the cursor.
+- Pinch gesture performs a left click.
+- One advanced function (scrolling or volume) implemented.
+- Code is modular, documented, and pushed to GitHub.
