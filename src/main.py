@@ -3,6 +3,7 @@ import time
 from hand_tracking import HandTracker
 from gestures import get_scroll_direction, PalmTimer
 from actions import scroll_up, scroll_down
+import gestures
 
 # Scroll cooldown settings
 SCROLL_DELAY = 0.2  # 200 milliseconds
@@ -20,6 +21,7 @@ def main():
     cv2.namedWindow(window_name)
     last_scroll_time = 0
     log_message = ""
+    prev_x, prev_y = 0, 0
 
     while True:
         ret, frame = cap.read()
@@ -68,6 +70,8 @@ def main():
                         last_scroll_time = current_time
                     else:
                         log_message = f"{label} hand detected"
+            
+            prev_x, prev_y = gestures.control_cursor(landmarks, prev_x, prev_y)
 
         # Overlay log message
         if log_message:

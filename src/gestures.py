@@ -1,5 +1,8 @@
 import mediapipe as mp
 import time
+import cv2
+import pyautogui
+import numpy as np
 
 mp_hands = mp.solutions.hands
 
@@ -152,3 +155,79 @@ class PalmTimer:
         if self.is_timing and self.start_time:
             return time.time() - self.start_time
         return 0
+
+def control_cursor(landmarks, prev_x, prev_y, smoothing=5, margin=0.01):
+    INDEX_TIP = 8
+    INDEX_PIP = 6
+    SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
+    CAM_WIDTH, CAM_HEIGHT = 640, 480
+
+    def is_index_active(landmarks):
+        return landmarks[INDEX_TIP].y < landmarks[INDEX_PIP].y - margin
+
+    if is_index_active(landmarks):
+        tip = landmarks[INDEX_TIP]
+        cam_x = int(tip.x * CAM_WIDTH)
+        cam_y = int(tip.y * CAM_HEIGHT)
+
+        screen_x = np.interp(cam_x, [0, CAM_WIDTH], [0, SCREEN_WIDTH])
+        screen_y = np.interp(cam_y, [0, CAM_HEIGHT], [0, SCREEN_HEIGHT])
+
+        curr_x = prev_x + (screen_x - prev_x) / smoothing
+        curr_y = prev_y + (screen_y - prev_y) / smoothing
+
+        pyautogui.moveTo(curr_x, curr_y)  
+        return curr_x, curr_y
+    return prev_x, prev_y
+
+if __name__ == "__main__":
+    INDEX_TIP = 8
+    INDEX_PIP = 6
+    CAM_WIDTH, CAM_HEIGHT = 640, 480
+    SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
+    SMOOTHING = 5
+    MARGIN = 0.01
+
+    prev_x, prev_y = 0, 0
+
+    mp_hands = mp.solutions.hands
+    hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+
+    cap = cv2.VideoCapture(0)
+    cap.set(3, CAM_WIDTH)
+    cap.set(4, CAM_HEIGHT)
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame = cv2.flip(frame, 1)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(frame_rgb)
+
+        if result.multi_hand_landmarks:
+            # Loop through all detected hands
+            for hand_landmarks in result.multi_hand_landmarks:
+                landmarks = hand_landmarks.landmark
+
+                if is_index_active(landmarks):
+                    tip = landmarks[INDEX_TIP]
+                    cam_x = int(tip.x * CAM_WIDTH)
+                    cam_y = int(tip.y * CAM_HEIGHT)
+
+                    screen_x = np.interp(cam_x, [0, CAM_WIDTH], [0, SCREEN_WIDTH])
+                    screen_y = np.interp(cam_y, [0, CAM_HEIGHT], [0, SCREEN_HEIGHT])
+
+                    curr_x = prev_x + (screen_x - prev_x) / SMOOTHING
+                    curr_y = prev_y + (screen_y - prev_y) / SMOOTHING
+
+                    pyautogui.moveTo(SCREEN_WIDTH - curr_x, curr_y)
+                    prev_x, prev_y = curr_x, curr_y
+                    break  # Only use the first active hand per frame
+
+        if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
