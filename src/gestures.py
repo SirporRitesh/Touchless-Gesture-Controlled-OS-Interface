@@ -1,5 +1,6 @@
 import mediapipe as mp
 import time
+import math
 
 mp_hands = mp.solutions.hands
 
@@ -50,8 +51,6 @@ def is_peace_sign(landmarks):
     pinky_mcp = landmarks[mp_hands.HandLandmark.PINKY_MCP]
     
     # Calculate distances to see if fingers are extended
-    import math
-    
     def distance(p1, p2):
         return math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2)
     
@@ -152,3 +151,16 @@ class PalmTimer:
         if self.is_timing and self.start_time:
             return time.time() - self.start_time
         return 0
+
+def is_pinch(landmarks, threshold=0.05):
+    """
+    Detects a pinch between thumb tip and index tip.
+    Returns (True, index_landmark) when pinch detected; (False, None) otherwise.
+    """
+    if not landmarks:
+        return False, None
+
+    thumb = landmarks[mp_hands.HandLandmark.THUMB_TIP]
+    index = landmarks[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+    dist = math.hypot(thumb.x - index.x, thumb.y - index.y)
+    return (dist < threshold), index
