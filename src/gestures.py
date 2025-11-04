@@ -164,3 +164,22 @@ def is_pinch(landmarks, threshold=0.05):
     index = landmarks[mp_hands.HandLandmark.INDEX_FINGER_TIP]
     dist = math.hypot(thumb.x - index.x, thumb.y - index.y)
     return (dist < threshold), index
+
+def dual_pinch(hand_data, threshold=0.05):
+    """
+    Detect if two (or more) hands are pinched simultaneously.
+    hand_data: list of dicts {'landmarks': landmarks, 'label': 'Left'|'Right'}
+    Returns list of dicts [{'label': label, 'index': index_landmark}, ...]
+    when at least two hands are pinched; returns empty list otherwise.
+    """
+    if not hand_data:
+        return []
+
+    pinched = []
+    for hand in hand_data:
+        landmarks = hand.get('landmarks')
+        label = hand.get('label', 'Unknown')
+        pinched_flag, index_lm = is_pinch(landmarks, threshold=threshold)
+        if pinched_flag and index_lm is not None:
+            pinched.append({'label': label, 'index': index_lm})
+    return pinched if len(pinched) >= 2 else []

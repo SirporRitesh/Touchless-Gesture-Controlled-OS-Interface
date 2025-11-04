@@ -1,21 +1,24 @@
 import cv2
 import time
 import math
+import os
+from datetime import datetime
 from hand_tracking import HandTracker
-from gestures import get_scroll_direction, PalmTimer, is_pinch
+from gestures import get_scroll_direction, PalmTimer, is_pinch, dual_pinch
 from actions import scroll_up, scroll_down
 
-# optional OS click library
+# optional OS click & screenshot library
 try:
     import pyautogui as pag
 except Exception:
     pag = None
 
-# Scroll cooldown settings
+# Scroll/click/screenshot cooldown settings
 SCROLL_DELAY = 0.2  # 200 milliseconds
 PINCH_THRESHOLD = 0.05
 PINCH_VIS_RADIUS = 18
-PINCH_COOLDOWN = 0.5  # seconds between clicks per hand
+PINCH_COOLDOWN = 0.5      # seconds between clicks per hand
+SCREENSHOT_COOLDOWN = 2.0 # seconds between screenshots
 
 def main():
     cap = cv2.VideoCapture(0)
@@ -26,9 +29,15 @@ def main():
         print("Error: Could not open webcam.")
         return
 
+    # Prepare screenshots directory (project parent of src)
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    screenshots_dir = os.path.join(repo_root, "screenshots")
+    os.makedirs(screenshots_dir, exist_ok=True)
+
     window_name = 'Webcam'
     cv2.namedWindow(window_name)
     last_scroll_time = 0
+    last_screenshot_time = 0
     log_message = ""
 
     # Per-hand state
@@ -50,6 +59,9 @@ def main():
         else:
             current_time = time.time()
 
+            # collect which hands are pinched this frame
+            pinched_hands = []
+
             # handle pinch for every detected hand (Left/Right)
             for hand in hand_data:
                 landmarks = hand['landmarks']
@@ -70,7 +82,10 @@ def main():
                 else:
                     cx, cy = None, None
 
-                # trigger on rising edge of pinch and respect cooldown
+                if pinched:
+                    pinched_hands.append((label, index_lm, (cx, cy)))
+
+                # trigger on rising edge of pinch for clicks and respect cooldown
                 if pinched and not last_pinch_state[label]:
                     if (current_time - last_click_time[label]) >= PINCH_COOLDOWN:
                         last_click_time[label] = current_time
@@ -80,13 +95,9 @@ def main():
                         button = 'left' if label.lower().startswith('left') else 'right'
                         log_message = f"{label} hand: Pinch -> {button} click"
 
-                        # perform OS click if possible
+                        # perform OS click at current system cursor position to avoid cursor jump
                         if pag:
                             try:
-                                # IMPORTANT: click at the current OS cursor position instead of
-                                # mapping from camera landmarks. This prevents the cursor from
-                                # jumping/moving while you hold the pinch. We still use the
-                                # rising-edge + cooldown logic above so each pinch triggers one click.
                                 sx, sy = pag.position()
                                 pag.click(x=sx, y=sy, button=button)
                             except Exception as e:
@@ -97,6 +108,35 @@ def main():
 
                 # update last pinch state for edge detection
                 last_pinch_state[label] = bool(pinched)
+
+            # SCREENSHOT: if two hands pinched simultaneously, take screenshot (keeps camera running)
+            dual = dual_pinch(hand_data, threshold=PINCH_THRESHOLD)
+            if dual and (current_time - last_screenshot_time) >= SCREENSHOT_COOLDOWN:
+                last_screenshot_time = current_time
+
+                # draw visual markers for each pinched hand
+                for entry in dual:
+                    idx = entry['index']
+                    cx = int(idx.x * w)
+                    cy = int(idx.y * h)
+                    cv2.circle(frame, (cx, cy), PINCH_VIS_RADIUS + 6, (255, 255, 0), 3)
+
+                # generate filename
+                filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                path = os.path.join(screenshots_dir, filename)
+
+                try:
+                    if pag:
+                        # pyautogui captures the full screen (monitor), not camera frame
+                        pag.screenshot(path)
+                    else:
+                        # fallback: save current camera frame
+                        cv2.imwrite(path, frame)
+                    log_message = f"Screenshot saved: {filename}"
+                    print(log_message)
+                except Exception as e:
+                    log_message = f"Screenshot failed: {e}"
+                    print(log_message)
 
             # Continue existing palm/scroll behavior using first hand
             hand = hand_data[0]
@@ -156,8 +196,8 @@ def main():
         if key == 27:  # ESC to exit
             break
 
-    cap.release()
+    cap.release()    
     cv2.destroyAllWindows()
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     main()
