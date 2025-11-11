@@ -1,7 +1,9 @@
 import cv2
+import mediapipe as mp
 import time
 import math
 import os
+import threading
 from datetime import datetime
 from hand_tracking import HandTracker
 from gestures import get_scroll_direction, PalmTimer, is_pinch, dual_pinch
@@ -29,10 +31,18 @@ def main():
         print("Error: Could not open webcam.")
         return
 
-    # Prepare screenshots directory (project parent of src)
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    screenshots_dir = os.path.join(repo_root, "screenshots")
-    os.makedirs(screenshots_dir, exist_ok=True)
+    # Preferred screenshots directory in OneDrive; fallback to repo/screenshots
+    try:
+        onedrive_screenshots = os.path.join(
+            os.environ.get("USERPROFILE", "C:\\Users\\Default"),
+            "OneDrive", "Pictures", "Screenshots"
+        )
+        os.makedirs(onedrive_screenshots, exist_ok=True)
+        screenshots_dir = onedrive_screenshots
+    except Exception:
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        screenshots_dir = os.path.join(repo_root, "screenshots")
+        os.makedirs(screenshots_dir, exist_ok=True)
 
     window_name = 'Webcam'
     cv2.namedWindow(window_name)
@@ -43,6 +53,30 @@ def main():
     # Per-hand state
     last_pinch_state = {}   # e.g. {'Left': False, 'Right': False}
     last_click_time = {}    # e.g. {'Left': 0.0, 'Right': 0.0}
+
+    # overlay control (use dict so worker thread can update safely)
+    overlay = {"message": "", "until": 0.0}
+
+    def _save_screenshot_async(path, frame=None):
+        """Save screenshot on background thread and update overlay message."""
+        def _worker():
+            try:
+                if pag:
+                    pag.screenshot(path)
+                else:
+                    if frame is not None:
+                        cv2.imwrite(path, frame)
+                    else:
+                        # nothing to save
+                        raise RuntimeError("No frame available and pyautogui missing")
+                msg = f"Screenshot saved: {os.path.basename(path)}"
+            except Exception as e:
+                msg = f"Screenshot failed: {e}"
+            # update overlay (thread-safe for simple assignment)
+            overlay["message"] = msg
+            overlay["until"] = time.time() + 1.5
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
 
     while True:
         ret, frame = cap.read()
@@ -121,22 +155,11 @@ def main():
                     cy = int(idx.y * h)
                     cv2.circle(frame, (cx, cy), PINCH_VIS_RADIUS + 6, (255, 255, 0), 3)
 
-                # generate filename
+                # generate filename and save to OneDrive screenshots dir
                 filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                 path = os.path.join(screenshots_dir, filename)
 
-                try:
-                    if pag:
-                        # pyautogui captures the full screen (monitor), not camera frame
-                        pag.screenshot(path)
-                    else:
-                        # fallback: save current camera frame
-                        cv2.imwrite(path, frame)
-                    log_message = f"Screenshot saved: {filename}"
-                    print(log_message)
-                except Exception as e:
-                    log_message = f"Screenshot failed: {e}"
-                    print(log_message)
+                _save_screenshot_async(path, frame)
 
             # Continue existing palm/scroll behavior using first hand
             hand = hand_data[0]
@@ -173,26 +196,39 @@ def main():
                         if not log_message:
                             log_message = f"{label} hand detected"
 
-        # Overlay log message
-        if log_message:
+        # If a transient overlay is active, prioritize showing it
+        now = time.time()
+        if overlay["until"] > now:
+            # show persistent overlay message (e.g. screenshot saved)
             cv2.putText(
                 frame,
-                log_message,
+                overlay["message"],
                 (10, frame.shape[0] - 40),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 0),
+                0.9,
+                (0, 255, 255),
                 2,
                 cv2.LINE_AA
             )
+        else:
+            # normal log overlay
+            if log_message:
+                cv2.putText(
+                    frame,
+                    log_message,
+                    (10, frame.shape[0] - 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 0),
+                    2,
+                    cv2.LINE_AA
+                )
 
         cv2.imshow(window_name, frame)
         key = cv2.waitKey(1) & 0xFF
 
-        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-            print("To close the webcam, please press the 'Esc' key.")
-            break
-
+        # DO NOT break if window loses focus temporarily (prevents camera from closing during OS click)
+        # Only exit on explicit ESC or palm-timer exit above.
         if key == 27:  # ESC to exit
             break
 
@@ -201,3 +237,5 @@ def main():
 
 if __name__ == "__main__":    
     main()
+
+
